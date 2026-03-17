@@ -24,7 +24,7 @@ pub fn generate_strongholds() {
     let placement = ConcentricRingPlacement::new(32, 128, 3, HashSet::new());
     let seed = 1;
     let chunk_generator_structure_state = ChunkGeneratorStructureState::new(seed); 
-    let positions = chunk_generator_structure_state.generate_ring_positions(placement);
+    let positions = chunk_generator_structure_state.generate_ring_positions_parallel(placement);
     for (i, position) in positions.iter().enumerate() {
         println!("{i}: {}, {}", ((position.x * 16) & !15) + 4, (((position.y * 16) & !15) + 4) * -1);
     }

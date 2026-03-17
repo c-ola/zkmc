@@ -381,8 +381,33 @@ impl Biomes {
 }
 
 impl Biomes {
+    pub fn find_biome_horizontal(&self, x: i32, y: i32, z: i32, radius: i32, random_source: &mut JavaUtilRandom) -> Option<(i32, i32, i32)> {
+        let x = QuartPos::from_block(x);
+        let y = QuartPos::from_block(y);
+        let z = QuartPos::from_block(z);
+        let radius = QuartPos::from_block(radius);
+        let mut res = None;
+        let mut count = 0;
+        let mut dat = Some(0);
+        for j in -radius..(radius+1) {
+            let z_d = z + j;
+            for i in -radius..(radius+1) {
+                let x_d = x + i;
+                let biome_id = self.get_noise_biome(x_d, y, z_d, &mut dat);
+
+                if biomes::is_stronghold_biased(biome_id as i16) {
+                    if count == 0 || random_source.next_int_bound(count + 1) == 0  {
+                        let block_pos = (QuartPos::to_block(x_d), y, QuartPos::to_block(z_d));
+                        res = Some(block_pos);
+                    }
+                    count += 1;
+                }
+            }
+        }
+        res
+    }
     // x, y, z, radius, increment
-    pub fn find_biome_horizontal(&self, i: i32, j: i32, k: i32, l: i32, m: i32, random_source: &mut JavaUtilRandom, bl: bool) -> Option<(i32, i32, i32)> {
+    pub fn find_biome_horizontal_ex(&self, i: i32, j: i32, k: i32, l: i32, m: i32, random_source: &mut JavaUtilRandom, bl: bool) -> Option<(i32, i32, i32)> {
         //println!("{}, {}, {}, {}", i, j, k, l);
         let n = QuartPos::from_block(i);
         let o = QuartPos::from_block(k);

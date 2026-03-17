@@ -1,50 +1,54 @@
 use core::f64;
 
-use crate::{JavaUtilRandom, minecraft::{QuartPos, biome_btree::btree21}, spline::{Spline, init_biome_noise}, tree::{get_np_dist, get_resulting_node}, xoroshiro::Xoroshiro};
+use crate::{
+    minecraft::{
+        biome_btree::btree21,
+        climate::{quantize, Climate},
+    },
+    spline::{init_biome_noise, Spline},
+    tree::{get_np_dist, get_resulting_node},
+    xoroshiro::Xoroshiro,
+    JavaUtilRandom,
+};
 
-
-
-pub struct ClimateSampler {
-    
-}
-
-impl ClimateSampler {
-    pub fn sample(i: i32, j: i32, k: i32) { //idk what it returns 
-        let l = QuartPos::to_block(i);
-        let m = QuartPos::to_block(j);
-        let n = QuartPos::to_block(k);
-        todo!()
-    }
-}
-
-pub fn maintain_precision(x: f64) -> f64 {
-    return x;// - f64::floor(x / 33554432.0 + 0.5) * 33554432.0;
-}
-
+#[inline(always)]
 pub fn lerp(part: f64, from: f64, to: f64) -> f64 {
     from + part * (to - from)
 }
 
-pub fn indexed_lerp(idx: usize, a: f64, b: f64, c: f64) -> f64 {
-    match idx & 0xf {
-        0 => a + b,
-        1 => -a + b,
-        2 => a - b,
-        3 => -a - b,
-        4 => a + c,
-        5 => -a + c,
-        6 => a - c,
-        7 => -a - c,
-        8 => b + c,
-        9 => -b + c,
-        10 => b - c,
-        11 => -b - c,
-        12 => a + b,
-        13 => -b + c,
-        14 => -a + b,
-        15 => -b - c,
-        _ => unreachable!()
-    }
+#[inline(always)]
+fn grad(hash: u8, x: f64, y: f64, z: f64) -> f64 {
+    let h = hash & 15;
+    let u = if h < 8 { x } else { y };
+    let v = if h < 4 {
+        y
+    } else if h == 12 || h == 14 {
+        x
+    } else {
+        z
+    };
+
+    (if h & 1 == 0 { u } else { -u }) + (if h & 2 == 0 { v } else { -v })
+}
+
+#[inline(always)]
+pub fn lerp_f32(part: f32, from: f32, to: f32) -> f32 {
+    from + part * (to - from)
+}
+
+#[inline(always)]
+fn grad_f32(hash: u8, x: f32, y: f32, z: f32) -> f32 {
+    let h = hash & 15;
+    let u = if h < 8 { x } else { y };
+    let v = if h < 4 {
+        y
+    } else if h == 12 || h == 14 {
+        x
+    } else {
+        z
+    };
+
+    (if h & 1 == 0 { u } else { -u }) + (if h & 2 == 0 { v } else { -v })
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -55,6 +59,10 @@ pub struct PerlinNoise {
     c: f64,
     amplitude: f64,
     lacuranity: f64,
+    d2: f64,
+    t2: f64,
+    i2: i32,
+    i2_low: i32,
 }
 
 impl Default for PerlinNoise {
@@ -65,7 +73,11 @@ impl Default for PerlinNoise {
             b: 0.0,
             c: 0.0,
             amplitude: 0.0,
-            lacuranity: 0.0
+            lacuranity: 0.0,
+            d2: 0.0,
+            t2: 0.0,
+            i2: 0,
+            i2_low: 0,
         }
     }
 }
@@ -86,11 +98,23 @@ impl PerlinNoise {
             d[j] = n;
             d[i + 256] = d[i];
         }
+
+        let mut d2 = b;
+        let i2= d2 as i32 - (d2 < 0.0) as i32;
+        d2 -= i2 as f64;
+        let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
+        let i2_low = (i2 & 0xff) as i32;
         Self {
-            a, b, c,
+            a,
+            b,
+            c,
             amplitude: 1.0,
             lacuranity: 1.0,
-            d
+            d,
+            d2,
+            t2,
+            i2,
+            i2_low,
         }
     }
 
@@ -110,14 +134,27 @@ impl PerlinNoise {
             d[i + 256] = d[i];
         }
 
+        let mut d2 = b;
+        let i2= d2 as i32 - (d2 < 0.0) as i32;
+        d2 -= i2 as f64;
+        let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
+        let i2_low = (i2 & 0xff) as i32;
+
         Self {
-            a, b, c,
+            a,
+            b,
+            c,
             amplitude: 1.0,
             lacuranity: 1.0,
-            d
+            d,
+            d2,
+            t2,
+            i2,
+            i2_low,
         }
     }
 
+    #[inline(always)]
     pub fn sample(&self, d1: f64, d2: f64, d3: f64, yamp: f64, ymin: f64) -> f64 {
         let mut d1 = d1 + self.a;
         let mut d2 = d2 + self.b;
@@ -132,27 +169,32 @@ impl PerlinNoise {
         let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
         let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
         if yamp > 0.0 {
-            let yclamp = if ymin < d2 {ymin} else {d2};
-            d2 -= (yclamp/yamp).floor() * yamp;
+            let yclamp = if ymin < d2 { ymin } else { d2 };
+            let div = yclamp / yamp;
+            let div_floor = div as i32 - (div < 0.0) as i32;
+            d2 -= (div_floor as f64) * yamp;
         }
         i1 &= 0xff;
         i2 &= 0xff;
         i3 &= 0xff;
 
-        let a1 = self.d[i1 as usize] as i32 + i2;
-        let a2 = self.d[a1 as usize] as i32 + i3;
-        let a3 = self.d[a1 as usize + 1] as i32 + i3;
-        let b1 = self.d[i1 as usize + 1] as i32 + i2;
-        let b2 = self.d[b1 as usize] as i32 + i3;
-        let b3 = self.d[b1 as usize + 1] as i32 + i3;
-        let mut l1 = indexed_lerp(self.d[a2 as usize] as usize,   d1,   d2,   d3);
-        let l2 = indexed_lerp(self.d[b2 as usize] as usize,   d1-1.0, d2,   d3);
-        let mut l3 = indexed_lerp(self.d[a3 as usize] as usize,   d1,   d2-1.0, d3);
-        let l4 = indexed_lerp(self.d[b3 as usize] as usize,   d1-1.0, d2-1.0, d3);
-        let mut l5 = indexed_lerp(self.d[a2 as usize+1] as usize, d1,   d2,   d3-1.0);
-        let l6 = indexed_lerp(self.d[b2 as usize+1] as usize, d1-1.0, d2,   d3-1.0);
-        let mut l7 = indexed_lerp(self.d[a3 as usize+1] as usize, d1,   d2-1.0, d3-1.0);
-        let l8 = indexed_lerp(self.d[b3 as usize+1] as usize, d1-1.0, d2-1.0, d3-1.0);
+        // doing this safely is faster than with unchecked
+        let a1 = (self.d[i1 as usize] as i32 + i2) as usize;
+        let a2 = (self.d[a1] as i32 + i3) as usize;
+        let a3 = (self.d[a1 + 1] as i32 + i3) as usize;
+
+        let b1 = (self.d[i1 as usize + 1] as i32 + i2) as usize;
+        let b2 = (self.d[b1] as i32 + i3) as usize;
+        let b3 = (self.d[b1 + 1] as i32 + i3) as usize;
+
+        let mut l1 = grad(self.d[a2], d1, d2, d3);
+        let l2 = grad(self.d[b2], d1 - 1.0, d2, d3);
+        let mut l3 = grad(self.d[a3], d1, d2 - 1.0, d3);
+        let l4 = grad(self.d[b3], d1 - 1.0, d2 - 1.0, d3);
+        let mut l5 = grad(self.d[a2 + 1], d1, d2, d3 - 1.0);
+        let l6 = grad(self.d[b2 + 1], d1 - 1.0, d2, d3 - 1.0);
+        let mut l7 = grad(self.d[a3 + 1], d1, d2 - 1.0, d3 - 1.0);
+        let l8 = grad(self.d[b3 + 1], d1 - 1.0, d2 - 1.0, d3 - 1.0);
         l1 = lerp(t1, l1, l2);
         l3 = lerp(t1, l3, l4);
         l5 = lerp(t1, l5, l6);
@@ -162,6 +204,209 @@ impl PerlinNoise {
         l5 = lerp(t2, l5, l7);
 
         lerp(t3, l1, l5)
+
+        // This is safe because i1,i2,i3 are < 256 and d is 512
+        /*unsafe {
+        let d = &self.d;
+        let a1 = (*d.get_unchecked(i1 as usize) as i32 + i2) as usize;
+        let a2 = (*d.get_unchecked(a1) as i32 + i3) as usize;
+        let a3 = (*d.get_unchecked(a1 + 1) as i32 + i3) as usize;
+
+        let b1 = (*d.get_unchecked(i1 as usize + 1) as i32 + i2) as usize;
+        let b2 = (*d.get_unchecked(b1) as i32 + i3) as usize;
+        let b3 = (*d.get_unchecked(b1 + 1) as i32 + i3) as usize;
+
+        let mut l1 = grad(*d.get_unchecked(a2), d1, d2, d3);
+        let l2 = grad(*d.get_unchecked(b2), d1 - 1.0, d2, d3);
+        let mut l3 = grad(*d.get_unchecked(a3), d1, d2 - 1.0, d3);
+        let l4 = grad(*d.get_unchecked(b3), d1 - 1.0, d2 - 1.0, d3);
+        let mut l5 = grad(*d.get_unchecked(a2 + 1), d1, d2, d3 - 1.0);
+        let l6 = grad(*d.get_unchecked(b2 + 1), d1 - 1.0, d2, d3 - 1.0);
+        let mut l7 = grad(*d.get_unchecked(a3 + 1), d1, d2 - 1.0, d3 - 1.0);
+        let l8 = grad(*d.get_unchecked(b3 + 1), d1 - 1.0, d2 - 1.0, d3 - 1.0);
+        l1 = lerp(t1, l1, l2);
+        l3 = lerp(t1, l3, l4);
+        l5 = lerp(t1, l5, l6);
+        l7 = lerp(t1, l7, l8);
+
+        l1 = lerp(t2, l1, l3);
+        l5 = lerp(t2, l5, l7);
+
+        lerp(t3, l1, l5)
+        }*/
+    }
+
+    #[inline(always)]
+    pub fn sample_xz(&self, d1: f64, d3: f64) -> f64 {
+        let mut d1 = d1 + self.a;
+        let mut d3 = d3 + self.c;
+
+        let mut i1 = d1 as i32 - (d1 < 0.0) as i32;
+        let mut i3 = d3 as i32 - (d3 < 0.0) as i32;
+
+        d1 -= i1 as f64;
+        d3 -= i3 as f64;
+
+        let t1 = d1 * d1 * d1 * (d1 * (d1 * 6.0 - 15.0) + 10.0);
+        let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
+
+        i1 &= 0xff;
+        i3 &= 0xff;
+
+        let a1 = (self.d[i1 as usize] as i32 + self.i2_low) as usize;
+        let a2 = (self.d[a1] as i32 + i3) as usize;
+        let a3 = (self.d[a1 + 1] as i32 + i3) as usize;
+
+        let b1 = (self.d[i1 as usize + 1] as i32 + self.i2_low) as usize;
+        let b2 = (self.d[b1] as i32 + i3) as usize;
+        let b3 = (self.d[b1 + 1] as i32 + i3) as usize;
+
+        let mut l1 = grad(self.d[a2], d1, self.d2, d3);
+        let l2 = grad(self.d[b2], d1 - 1.0, self.d2, d3);
+        let mut l3 = grad(self.d[a3], d1, self.d2 - 1.0, d3);
+        let l4 = grad(self.d[b3], d1 - 1.0, self.d2 - 1.0, d3);
+        let mut l5 = grad(self.d[a2 + 1], d1, self.d2, d3 - 1.0);
+        let l6 = grad(self.d[b2 + 1], d1 - 1.0, self.d2, d3 - 1.0);
+        let mut l7 = grad(self.d[a3 + 1], d1, self.d2 - 1.0, d3 - 1.0);
+        let l8 = grad(self.d[b3 + 1], d1 - 1.0, self.d2 - 1.0, d3 - 1.0);
+        
+        l1 = lerp(t1, l1, l2);
+        l3 = lerp(t1, l3, l4);
+        l5 = lerp(t1, l5, l6);
+        l7 = lerp(t1, l7, l8);
+
+        l1 = lerp(self.t2, l1, l3);
+        l5 = lerp(self.t2, l5, l7);
+
+        lerp(t3, l1, l5)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PerlinNoiseF32 {
+    d: [u8; 512],
+    a: f32,
+    b: f32,
+    c: f32,
+    amplitude: f32,
+    lacuranity: f32,
+}
+
+impl Default for PerlinNoiseF32 {
+    fn default() -> Self {
+        Self {
+            d: [0u8; 512],
+            a: 0.0,
+            b: 0.0,
+            c: 0.0,
+            amplitude: 0.0,
+            lacuranity: 0.0,
+        }
+    }
+}
+
+impl PerlinNoiseF32 {
+    pub fn init(random: &mut JavaUtilRandom) -> Self {
+        let a = random.next_double() as f32;
+        let b = random.next_double() as f32;
+        let c = random.next_double() as f32;
+        let mut d = [0u8; 512];
+        for i in 0..256 {
+            d[i] = i as u8;
+        }
+        for i in 0..256usize {
+            let j = random.next_int_bound(256 - i as i32) as usize + i;
+            let n = d[i];
+            d[i] = d[j];
+            d[j] = n;
+            d[i + 256] = d[i];
+        }
+        Self {
+            a,
+            b,
+            c,
+            amplitude: 1.0,
+            lacuranity: 1.0,
+            d,
+        }
+    }
+
+    pub fn x_init(xrng: &mut Xoroshiro) -> Self {
+        let a = xrng.next_double() as f32 * 256.0;
+        let b = xrng.next_double() as f32 * 256.0;
+        let c = xrng.next_double() as f32 * 256.0;
+        let mut d = [0u8; 512];
+        for i in 0..256 {
+            d[i] = i as u8;
+        }
+        for i in 0..256usize {
+            let j = (xrng.next_int((256 - i) as u32) + i as i32) as usize;
+            let n = d[i];
+            d[i] = d[j];
+            d[j] = n;
+            d[i + 256] = d[i];
+        }
+
+        Self {
+            a,
+            b,
+            c,
+            amplitude: 1.0,
+            lacuranity: 1.0,
+            d,
+        }
+    }
+
+    #[inline(always)]
+    pub fn sample(&self, d1: f32, d2: f32, d3: f32, yamp: f32, ymin: f32) -> f32 {
+        let mut d1 = d1 + self.a;
+        let mut d2 = d2 + self.b;
+        let mut d3 = d3 + self.c;
+        let mut i1 = d1 as i32 - (d1 < 0.0) as i32;
+        let mut i2 = d2 as i32 - (d2 < 0.0) as i32;
+        let mut i3 = d3 as i32 - (d3 < 0.0) as i32;
+        d1 -= i1 as f32;
+        d2 -= i2 as f32;
+        d3 -= i3 as f32;
+        let t1 = d1 * d1 * d1 * (d1 * (d1 * 6.0 - 15.0) + 10.0);
+        let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
+        let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
+        if yamp > 0.0 {
+            let yclamp = if ymin < d2 { ymin } else { d2 };
+            let div = yclamp / yamp;
+            let div_floor = div as i32 - (div < 0.0) as i32;
+            d2 -= (div_floor as f32) * yamp;
+        }
+        i1 &= 0xff;
+        i2 &= 0xff;
+        i3 &= 0xff;
+
+        // doing this safely is faster than with unchecked
+        let a1 = (self.d[i1 as usize] as i32 + i2) as usize;
+        let a2 = (self.d[a1] as i32 + i3) as usize;
+        let a3 = (self.d[a1 + 1] as i32 + i3) as usize;
+
+        let b1 = (self.d[i1 as usize + 1] as i32 + i2) as usize;
+        let b2 = (self.d[b1] as i32 + i3) as usize;
+        let b3 = (self.d[b1 + 1] as i32 + i3) as usize;
+
+        let mut l1 = grad_f32(self.d[a2], d1, d2, d3);
+        let l2 = grad_f32(self.d[b2], d1 - 1.0, d2, d3);
+        let mut l3 = grad_f32(self.d[a3], d1, d2 - 1.0, d3);
+        let l4 = grad_f32(self.d[b3], d1 - 1.0, d2 - 1.0, d3);
+        let mut l5 = grad_f32(self.d[a2 + 1], d1, d2, d3 - 1.0);
+        let l6 = grad_f32(self.d[b2 + 1], d1 - 1.0, d2, d3 - 1.0);
+        let mut l7 = grad_f32(self.d[a3 + 1], d1, d2 - 1.0, d3 - 1.0);
+        let l8 = grad_f32(self.d[b3 + 1], d1 - 1.0, d2 - 1.0, d3 - 1.0);
+        l1 = lerp_f32(t1, l1, l2);
+        l3 = lerp_f32(t1, l3, l4);
+        l5 = lerp_f32(t1, l5, l6);
+        l7 = lerp_f32(t1, l7, l8);
+
+        l1 = lerp_f32(t2, l1, l3);
+        l5 = lerp_f32(t2, l5, l7);
+
+        lerp_f32(t3, l1, l5)
     }
 }
 
@@ -186,7 +431,7 @@ impl OctaveNoise {
         (0xdffa22b534c5f608, 0xb9b67517d3665ca9), // md5 "octave_-1"
         (0xd50708086cef4d7c, 0x6e1651ecc7f43309), // md5 "octave_0"
     ];
-    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f64], omin: i32) -> Self{
+    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f64], omin: i32) -> Self {
         let len = amplitudes.len() as i32;
         let mut lacuna: f64 = 2.0_f64.powi(omin);
         let mut persist: f64 = 2.0_f64.powi(len - 1) / ((1 << len) - 1) as f64;
@@ -198,35 +443,45 @@ impl OctaveNoise {
             if amplitudes[i as usize] == 0.0 {
                 lacuna *= 2.0;
                 persist *= 0.5;
-                continue
+                continue;
             }
-            let lo = lo ^ Self::MD5_OCTAVE_N[12  + omin as usize + i].0;
-            let hi = hi ^ Self::MD5_OCTAVE_N[12  + omin as usize + i].1;
+            let lo = lo ^ Self::MD5_OCTAVE_N[12 + omin as usize + i].0;
+            let hi = hi ^ Self::MD5_OCTAVE_N[12 + omin as usize + i].1;
             let mut pxrng = Xoroshiro::from_parts(lo, hi);
             let mut octave = PerlinNoise::x_init(&mut pxrng);
+            //octave.amplitude = (amplitudes[i] * persist) as f32;
+            //octave.lacuranity = lacuna as f32;
             octave.amplitude = amplitudes[i] * persist;
             octave.lacuranity = lacuna;
             octaves.push(octave);
             lacuna *= 2.0;
             persist *= 0.5;
         }
-        Self {
-            octaves
-        }
+        Self { octaves }
     }
 
+    #[inline]
     pub fn sample(&self, x: f64, y: f64, z: f64) -> f64 {
         let mut v = 0.0;
-        for i in 0..self.octaves.len() {
-            let octave = &self.octaves[i];
+        for octave in &self.octaves {
             let lf = octave.lacuranity;
-            let ax = maintain_precision(x * lf);
-            let ay = maintain_precision(y * lf);
-            let az = maintain_precision(z * lf);
-            let pv = octave.sample(ax, ay, az, 0.0, 0.0);
+            //let pv = octave.sample(x as f32 * lf, y as f32 * lf, z as f32 * lf, 0.0, 0.0);
+            let pv = octave.sample(x * lf, y * lf, z * lf, 0.0, 0.0);
+            //let pv = octave.sample_xz(x * lf, z * lf);
             v += octave.amplitude * pv;
         }
-        v
+        v as f64
+    }
+
+    #[inline]
+    pub fn sample_xz(&self, x: f64, z: f64) -> f64 {
+        let mut v = 0.0;
+        for octave in &self.octaves {
+            let lf = octave.lacuranity;
+            let pv = octave.sample_xz(x * lf, z * lf);
+            v += octave.amplitude * pv;
+        }
+        v as f64
     }
 }
 
@@ -241,24 +496,19 @@ impl DoublePerlinNoise {
     pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f64], omin: i32) -> Self {
         let oct_a = OctaveNoise::x_init(xrng, amplitudes, omin);
         let oct_b = OctaveNoise::x_init(xrng, amplitudes, omin);
-        let mut len = amplitudes.len();
-        for i in (0..len).rev() {
-            if amplitudes[i] != 0.0 {
-                break
-            } else {
-                len -= 1;
-            }
-        }
-        for i in 0..len {
-            if amplitudes[i] != 0.0 {
-                break
-            } else {
-                len -= 1;
-            }
-        }
-        let amplitude = (5.0 / 3.0) * (len as f64/ (len + 1) as f64);
+        let first = amplitudes.iter().position(|&x| x != 0.0).unwrap_or(0);
+        let last = amplitudes.iter().rposition(|&x| x != 0.0).unwrap_or(0);
+        let span_length = if amplitudes[first] != 0.0 {
+            last - first + 1
+        } else {
+            0
+        };
+
+        let amplitude = (5.0 / 3.0) * (span_length as f64 / (span_length + 1) as f64);
         Self {
-            oct_a, oct_b, amplitude
+            oct_a,
+            oct_b,
+            amplitude,
         }
     }
 
@@ -266,7 +516,15 @@ impl DoublePerlinNoise {
         let f = 337.0 / 331.0;
         let mut v = 0.0;
         v += self.oct_a.sample(x, y, z);
-        v += self.oct_b.sample(x*f, y*f, z*f);
+        v += self.oct_b.sample(x * f, y * f, z * f);
+        v * self.amplitude
+    }
+
+    pub fn sample_xz(&self, x: f64, z: f64) -> f64 {
+        let f = 337.0 / 331.0;
+        let mut v = 0.0;
+        v += self.oct_a.sample_xz(x, z);
+        v += self.oct_b.sample_xz(x * f, z * f);
         v * self.amplitude
     }
 }
@@ -280,9 +538,6 @@ pub struct BiomeNoise {
     erosion: DoublePerlinNoise,
     weirdness: DoublePerlinNoise,
     spline: Spline,
-    /*oct: [PerlinNoise; 2 * 23],
-    sp: Vec<Spline>,
-    ss: SplineStack,*/
 }
 
 impl BiomeNoise {
@@ -297,12 +552,74 @@ impl BiomeNoise {
     pub fn init_climates(&mut self, xlo: u64, xhi: u64, large: bool) {
         // shift, minecraft:offset
         let options: [(Vec<f64>, u64, u64, i32); _] = [
-            (vec![1.5, 0.0, 1.0, 0.0, 0.0, 0.0], if large { 0x944b0073edf549db } else { 0x5c7e6b29735f0d7f} , if large {0x4ff44347e9d22b96} else {0xf7d86f1bbc734988}, if large {-12} else {-10}), // temperature
-            (vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0], if large {0x71b8ab943dbd5301} else {0x81bb4d22e8dc168e}, if large {0xbb63ddcf39ff7a2b} else {0xf1c8b4bea16303cd}, if large {-10} else {-8}), // humidity
-            (vec![1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0], if large {0x9a3f51a113fce8dc} else {0x83886c9d0ae3a662}, if large {0xee2dbd157e5dcdad} else {0xafa638a61b42e8ad}, if large {-11} else {-9}), // continentalness
-            (vec![1.0, 1.0, 0.0, 1.0, 1.0], if large {0x8c984b1f8702a951} else {0xd02491e6058f6fd8}, if large {0xead7b1f92bae535f} else {0x4792512c94c17a80}, if large {-11} else {-9}), // erosion
-            (vec![1.0, 1.0, 1.0, 0.0], 0x080518cf6af25384, 0x3f3dfb40a54febd5, -3), // shift
-            (vec![1.0, 2.0, 1.0, 0.0, 0.0, 0.0], 0xefc8ef4d36102b34, 0x1beeeb324a0f24ea, -7), // weirdness
+            (
+                vec![1.5, 0.0, 1.0, 0.0, 0.0, 0.0],
+                if large {
+                    0x944b0073edf549db
+                } else {
+                    0x5c7e6b29735f0d7f
+                },
+                if large {
+                    0x4ff44347e9d22b96
+                } else {
+                    0xf7d86f1bbc734988
+                },
+                if large { -12 } else { -10 },
+            ), // temperature
+            (
+                vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                if large {
+                    0x71b8ab943dbd5301
+                } else {
+                    0x81bb4d22e8dc168e
+                },
+                if large {
+                    0xbb63ddcf39ff7a2b
+                } else {
+                    0xf1c8b4bea16303cd
+                },
+                if large { -10 } else { -8 },
+            ), // humidity
+            (
+                vec![1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0],
+                if large {
+                    0x9a3f51a113fce8dc
+                } else {
+                    0x83886c9d0ae3a662
+                },
+                if large {
+                    0xee2dbd157e5dcdad
+                } else {
+                    0xafa638a61b42e8ad
+                },
+                if large { -11 } else { -9 },
+            ), // continentalness
+            (
+                vec![1.0, 1.0, 0.0, 1.0, 1.0],
+                if large {
+                    0x8c984b1f8702a951
+                } else {
+                    0xd02491e6058f6fd8
+                },
+                if large {
+                    0xead7b1f92bae535f
+                } else {
+                    0x4792512c94c17a80
+                },
+                if large { -11 } else { -9 },
+            ), // erosion
+            (
+                vec![1.0, 1.0, 1.0, 0.0],
+                0x080518cf6af25384,
+                0x3f3dfb40a54febd5,
+                -3,
+            ), // shift
+            (
+                vec![1.0, 2.0, 1.0, 0.0, 0.0, 0.0],
+                0xefc8ef4d36102b34,
+                0x1beeeb324a0f24ea,
+                -7,
+            ), // weirdness
         ];
         let mut climates = Vec::new();
         for opt in options {
@@ -323,17 +640,17 @@ impl BiomeNoise {
         let mut d = 0.0;
         let mut px = x as f64;
         let mut pz = z as f64;
-        
-        if !(flags & 0x1 != 0) { // no shift
-            px += self.shift.sample(x as f64, 0.0, z as f64) * 4.0;
+
+        if !(flags & 0x1 != 0) { // NO_SHIFT
+            px += self.shift.sample_xz(x as f64, z as f64) * 4.0;
             pz += self.shift.sample(z as f64, x as f64, 0.0) * 4.0;
         }
 
-        let c = self.continentalness.sample(px, 0.0, pz);
-        let e = self.erosion.sample(px, 0.0, pz);
-        let w = self.weirdness.sample(px, 0.0, pz);
+        let c = self.continentalness.sample_xz(px, pz);
+        let e = self.erosion.sample_xz(px, pz);
+        let w = self.weirdness.sample_xz(px, pz);
 
-        if !(flags & 0x2 != 0) { // no_depth, not needed?
+        if !(flags & 0x2 != 0) { // NO_DEPTH
             let np_param = [
                 c as f32,
                 e as f32,
@@ -341,30 +658,36 @@ impl BiomeNoise {
                 w as f32,
             ];
             let off: f64 = (self.spline.sample(&np_param) + 0.015) as f64;
-
-            // double py = y + sampleDoublePerlin(&bn->shift, y, z, x) * 4.0;
             d = 1.0 - (y * 4) as f64 / 128.0 - 83.0 / 160.0 + off;
         }
 
-        let t = self.temperature.sample(px, 0.0, pz);
-        let h = self.humidity.sample(px, 0.0, pz);
-        let np: Vec<_> = [t, h, c, e, d, w].iter().map(|f| (10000.0 * f) as i64 as u64).collect();
+        let t = self.temperature.sample_xz(px, pz);
+        let h = self.humidity.sample_xz(px, pz);
+        //let np: Vec<_> = [t, h, c, e, d, w].iter().map(|f| (10000.0 * f) as i64 as u64).collect();
         //let l_np: Vec<_> = [t, h, c, e, d, w].iter().map(|f| (10000.0 * f) as i64).collect();
         //println!("{l_np:?}");
+        let quantized = [
+            quantize(t),
+            quantize(h),
+            quantize(c),
+            quantize(e),
+            quantize(d),
+            quantize(w),
+        ];
 
-        Self::p2overworld(np, dat)
+        Self::p2overworld(&quantized, dat)
     }
 
-    pub fn p2overworld(np: Vec<u64>, dat: &mut Option<u64>) -> i32 {
+    pub fn p2overworld(np: &Climate, dat: &mut Option<u64>) -> i32 {
         let idx = if let Some(d) = dat {
             let alt = *d as i32;
-            let ds = get_np_dist(&np, alt);
+            let ds = get_np_dist(np, alt);
             //println!("ds={ds}");
-            let idx = get_resulting_node(&np, 0, alt, ds, 0);
+            let idx = get_resulting_node(np, 0, alt, ds, 0);
             *d = idx as u64;
             idx
         } else {
-            get_resulting_node(&np, 0, 0, -1i64 as u64, 0)
+            get_resulting_node(np, 0, 0, -1i64 as u64, 0)
         };
         //println!("{idx}");
         //panic!("");

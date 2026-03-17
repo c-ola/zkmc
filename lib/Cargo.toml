@@ -7,3 +7,4 @@ edition = "2021"
 alloy-sol-types = { workspace = true }
 cubiomes = { git = "https://github.com/EnderKill98/cubiomes-rs", rev = "9055f8d1b3db45d2ff2612e156e306b9dcc13d08" }
 libcubiomes-sys = { git = "https://github.com/EnderKill98/cubiomes-rs", rev = "9055f8d1b3db45d2ff2612e156e306b9dcc13d08" }
+rayon = "1.11.0"

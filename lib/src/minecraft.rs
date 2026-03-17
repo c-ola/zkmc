@@ -1,6 +1,21 @@
 pub mod chunk;
+pub mod climate;
 pub mod biome_btree;
 pub mod biome;
+
+
+pub struct Section;
+
+impl Section {
+    #[inline(always)]
+    pub fn to_block_coord(i: i32) -> i32 {
+        i << 4
+    }
+    #[inline(always)]
+    pub fn to_block_coord_ex(i: i32, j: i32) -> i32 {
+        (i << 4) + j
+    }
+}
 
 pub struct QuartPos;
 
