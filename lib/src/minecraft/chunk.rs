@@ -1,8 +1,9 @@
 use std::{collections::HashSet, f64::consts::PI};
 
+#[cfg(not(target_os = "zkvm"))]
 use rayon::prelude::*;
 
-use crate::{JavaUtilRandom, minecraft::{LegacyRandomSource, RandomSource, RandomState, Section, biome::Biomes}};
+use crate::{JavaUtilRandom, minecraft::{Section, biome::Biomes}};
 
 #[derive(Debug)]
 pub struct ChunkPos {
@@ -80,6 +81,7 @@ impl ChunkGeneratorStructureState {
         list
     }
 
+    #[cfg(not(target_os = "zkvm"))]
     pub fn generate_ring_positions_parallel(&self, ring_placement: ConcentricRingPlacement) -> Vec<ChunkPos> {
         let distance = ring_placement.distance;
         let count = ring_placement.count;
