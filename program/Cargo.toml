@@ -4,6 +4,6 @@ name = "mc-program"
 edition = "2021"
 
 [dependencies]
-alloy-sol-types = { workspace = true }
 sp1-zkvm = { version = "6.0.1" }
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha2", tag = "patch-sha2-0.10.9-sp1-6.0.0" }
 mc-lib = { path = "../lib" }

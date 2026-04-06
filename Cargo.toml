@@ -1,6 +1,3 @@
 [workspace]
 members = ["lib", "program", "script", "mc-dev"]
 resolver = "2"
-
-[workspace.dependencies]
-alloy-sol-types = "*"

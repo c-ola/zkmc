@@ -1,19 +1,19 @@
-use core::f64;
+use core::f32;
 
 use crate::{
     minecraft::{
         biome_tree::btree21,
-        climate::{Climate, quantize},
+        climate::{Climate, quantize_f32},
     }, rng::{JavaUtilRandom, RandomSource, Xoroshiro}, util::{Spline, init_biome_noise}, tree::{get_np_dist, get_resulting_node}
 };
 
 #[inline(always)]
-pub fn lerp(part: f64, from: f64, to: f64) -> f64 {
+pub fn lerp(part: f32, from: f32, to: f32) -> f32 {
     from + part * (to - from)
 }
 
 #[inline(always)]
-fn grad(hash: u8, x: f64, y: f64, z: f64) -> f64 {
+fn grad(hash: u8, x: f32, y: f32, z: f32) -> f32 {
     let h = hash & 15;
     let u = if h < 8 { x } else { y };
     let v = if h < 4 {
@@ -52,13 +52,13 @@ fn grad_f32(hash: u8, x: f32, y: f32, z: f32) -> f32 {
 #[derive(Debug, Copy, Clone)]
 pub struct PerlinNoise {
     d: [u8; 512],
-    a: f64,
-    b: f64,
-    c: f64,
-    amplitude: f64,
-    lacuranity: f64,
-    d2: f64,
-    t2: f64,
+    a: f32,
+    b: f32,
+    c: f32,
+    amplitude: f32,
+    lacuranity: f32,
+    d2: f32,
+    t2: f32,
     i2: i32,
 }
 
@@ -101,15 +101,15 @@ impl PerlinNoise {
         let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
         let i2 = (i2 & 0xff) as i32;
         Self {
-            a,
-            b,
-            c,
+            a: a as f32,
+            b: b as f32,
+            c: c as f32,
             amplitude: 1.0,
             lacuranity: 1.0,
             d,
-            d2,
-            t2,
-            i2,
+            d2: d2 as f32,
+            t2: t2 as f32,
+            i2
         }
     }
 
@@ -136,29 +136,29 @@ impl PerlinNoise {
         let i2 = (i2 & 0xff) as i32;
 
         Self {
-            a,
-            b,
-            c,
+            a: a as f32,
+            b: b as f32,
+            c: c as f32,
             amplitude: 1.0,
             lacuranity: 1.0,
             d,
-            d2,
-            t2,
-            i2,
+            d2: d2 as f32,
+            t2: t2 as f32,
+            i2
         }
     }
 
     #[inline(always)]
-    pub fn sample(&self, d1: f64, d2: f64, d3: f64, yamp: f64, ymin: f64) -> f64 {
+    pub fn sample(&self, d1: f32, d2: f32, d3: f32, yamp: f32, ymin: f32) -> f32 {
         let mut d1 = d1 + self.a;
         let mut d2 = d2 + self.b;
         let mut d3 = d3 + self.c;
         let mut i1 = d1 as i32 - (d1 < 0.0) as i32;
         let mut i2 = d2 as i32 - (d2 < 0.0) as i32;
         let mut i3 = d3 as i32 - (d3 < 0.0) as i32;
-        d1 -= i1 as f64;
-        d2 -= i2 as f64;
-        d3 -= i3 as f64;
+        d1 -= i1 as f32;
+        d2 -= i2 as f32;
+        d3 -= i3 as f32;
         let t1 = d1 * d1 * d1 * (d1 * (d1 * 6.0 - 15.0) + 10.0);
         let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
         let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
@@ -166,7 +166,7 @@ impl PerlinNoise {
             let yclamp = if ymin < d2 { ymin } else { d2 };
             let div = yclamp / yamp;
             let div_floor = div as i32 - (div < 0.0) as i32;
-            d2 -= (div_floor as f64) * yamp;
+            d2 -= (div_floor as f32) * yamp;
         }
         i1 &= 0xff;
         i2 &= 0xff;
@@ -231,15 +231,15 @@ impl PerlinNoise {
     }
 
     #[inline(always)]
-    pub fn sample_xz(&self, d1: f64, d3: f64) -> f64 {
+    pub fn sample_xz(&self, d1: f32, d3: f32) -> f32 {
         let mut d1 = d1 + self.a;
         let mut d3 = d3 + self.c;
 
         let mut i1 = d1 as i32 - (d1 < 0.0) as i32;
         let mut i3 = d3 as i32 - (d3 < 0.0) as i32;
 
-        d1 -= i1 as f64;
-        d3 -= i3 as f64;
+        d1 -= i1 as f32;
+        d3 -= i3 as f32;
 
         let t1 = d1 * d1 * d1 * (d1 * (d1 * 6.0 - 15.0) + 10.0);
         let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
@@ -425,10 +425,10 @@ impl OctaveNoise {
         (0xdffa22b534c5f608, 0xb9b67517d3665ca9), // md5 "octave_-1"
         (0xd50708086cef4d7c, 0x6e1651ecc7f43309), // md5 "octave_0"
     ];
-    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f64], omin: i32) -> Self {
+    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f32], omin: i32) -> Self {
         let len = amplitudes.len() as i32;
-        let mut lacuna: f64 = 2.0_f64.powi(omin);
-        let mut persist: f64 = 2.0_f64.powi(len - 1) / ((1 << len) - 1) as f64;
+        let mut lacuna: f32 = 2.0_f32.powi(omin);
+        let mut persist: f32 = 2.0_f32.powi(len - 1) / ((1 << len) - 1) as f32;
         let lo = xrng.next_u64();
         let hi = xrng.next_u64();
 
@@ -455,7 +455,7 @@ impl OctaveNoise {
     }
 
     #[inline]
-    pub fn sample(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn sample(&self, x: f32, y: f32, z: f32) -> f32 {
         let mut v = 0.0;
         for octave in &self.octaves {
             let lf = octave.lacuranity;
@@ -464,30 +464,30 @@ impl OctaveNoise {
             //let pv = octave.sample_xz(x * lf, z * lf);
             v += octave.amplitude * pv;
         }
-        v as f64
+        v as f32
     }
 
     #[inline]
-    pub fn sample_xz(&self, x: f64, z: f64) -> f64 {
+    pub fn sample_xz(&self, x: f32, z: f32) -> f32 {
         let mut v = 0.0;
         for octave in &self.octaves {
             let lf = octave.lacuranity;
             let pv = octave.sample_xz(x * lf, z * lf);
             v += octave.amplitude * pv;
         }
-        v as f64
+        v as f32
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct DoublePerlinNoise {
-    amplitude: f64,
+    amplitude: f32,
     oct_a: OctaveNoise,
     oct_b: OctaveNoise,
 }
 
 impl DoublePerlinNoise {
-    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f64], omin: i32) -> Self {
+    pub fn x_init(xrng: &mut Xoroshiro, amplitudes: &[f32], omin: i32) -> Self {
         let oct_a = OctaveNoise::x_init(xrng, amplitudes, omin);
         let oct_b = OctaveNoise::x_init(xrng, amplitudes, omin);
         let first = amplitudes.iter().position(|&x| x != 0.0).unwrap_or(0);
@@ -498,7 +498,7 @@ impl DoublePerlinNoise {
             0
         };
 
-        let amplitude = (5.0 / 3.0) * (span_length as f64 / (span_length + 1) as f64);
+        let amplitude = (5.0 / 3.0) * (span_length as f32 / (span_length + 1) as f32);
         Self {
             oct_a,
             oct_b,
@@ -506,7 +506,7 @@ impl DoublePerlinNoise {
         }
     }
 
-    pub fn sample(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn sample(&self, x: f32, y: f32, z: f32) -> f32 {
         let f = 337.0 / 331.0;
         let mut v = 0.0;
         v += self.oct_a.sample(x, y, z);
@@ -514,7 +514,7 @@ impl DoublePerlinNoise {
         v * self.amplitude
     }
 
-    pub fn sample_xz(&self, x: f64, z: f64) -> f64 {
+    pub fn sample_xz(&self, x: f32, z: f32) -> f32 {
         let f = 337.0 / 331.0;
         let mut v = 0.0;
         v += self.oct_a.sample_xz(x, z);
@@ -545,7 +545,7 @@ impl BiomeNoise {
 
     pub fn init_climates(&mut self, xlo: u64, xhi: u64, large: bool) {
         // shift, minecraft:offset
-        let options: [(Vec<f64>, u64, u64, i32); _] = [
+        let options: [(Vec<f32>, u64, u64, i32); _] = [
             (
                 vec![1.5, 0.0, 1.0, 0.0, 0.0, 0.0],
                 if large {
@@ -632,12 +632,12 @@ impl BiomeNoise {
 
     pub fn sample(&self, x: i32, y: i32, z: i32, flags: u32, dat: &mut Option<u64>) -> i32 {
         let mut d = 0.0;
-        let mut px = x as f64;
-        let mut pz = z as f64;
+        let mut px = x as f32;
+        let mut pz = z as f32;
 
         if !(flags & 0x1 != 0) { // NO_SHIFT
-            px += self.shift.sample_xz(x as f64, z as f64) * 4.0;
-            pz += self.shift.sample(z as f64, x as f64, 0.0) * 4.0;
+            px += self.shift.sample_xz(x as f32, z as f32) * 4.0;
+            pz += self.shift.sample(z as f32, x as f32, 0.0) * 4.0;
         }
 
         let c = self.continentalness.sample_xz(px, pz);
@@ -651,8 +651,8 @@ impl BiomeNoise {
                 -3.0 * (((w as f32).abs() - 0.6666667).abs() - 0.33333334),
                 w as f32,
             ];
-            let off: f64 = (self.spline.sample(&np_param) + 0.015) as f64;
-            d = 1.0 - (y * 4) as f64 / 128.0 - 83.0 / 160.0 + off;
+            let off: f32 = (self.spline.sample(&np_param) + 0.015) as f32;
+            d = 1.0 - (y * 4) as f32 / 128.0 - 83.0 / 160.0 + off;
         }
 
         let t = self.temperature.sample_xz(px, pz);
@@ -661,12 +661,12 @@ impl BiomeNoise {
         //let l_np: Vec<_> = [t, h, c, e, d, w].iter().map(|f| (10000.0 * f) as i64).collect();
         //println!("{l_np:?}");
         let quantized = [
-            quantize(t),
-            quantize(h),
-            quantize(c),
-            quantize(e),
-            quantize(d),
-            quantize(w),
+            quantize_f32(t),
+            quantize_f32(h),
+            quantize_f32(c),
+            quantize_f32(e),
+            quantize_f32(d),
+            quantize_f32(w),
         ];
 
         Self::p2overworld(&quantized, dat)
@@ -689,3 +689,4 @@ impl BiomeNoise {
         ((node >> 48) & 0xff) as i32
     }
 }
+

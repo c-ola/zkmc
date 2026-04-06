@@ -1,3 +1,5 @@
+use crate::rng::RandomSource;
+
 pub struct Xoroshiro {
     lo: u64,
     hi: u64,
@@ -30,20 +32,27 @@ impl Xoroshiro {
             lo, hi
         }
     }
-    
-    #[inline]
-    pub fn next_int(&mut self, n: u32) -> i32 {
-        let mut r: u64 = (self.next_long() & 0xffffffff) * n as u64;
-        if (r as u32) < n {
+}
+
+impl RandomSource for Xoroshiro {
+    #[inline(always)]
+    fn next_i32(&mut self) -> i32 {
+        (self.next_u64() >> 32) as i32
+    }
+
+    #[inline(always)]
+    fn next_i32_bound(&mut self, n: i32) -> i32 {
+        let mut r: u64 = (self.next_u64() & 0xffffffff) * n as u64;
+        if (r as i32) < n {
             while r < (!n + 1) as u64 % n as u64 {
-                r = (self.next_long() & 0xffffffff) * n as u64;
+                r = (self.next_u64() & 0xffffffff) * n as u64;
             }
         }
         (r >> 32) as i32
     }
 
-    #[inline]
-    pub fn next_long(&mut self) -> u64 {
+    #[inline(always)]
+    fn next_u64(&mut self) -> u64 {
         let n = (self.lo + self.hi).rotate_left(17) + self.lo;
         let h = self.hi ^ self.lo;
         self.lo = self.lo.rotate_left(49) ^ h ^ (h << 21);
@@ -51,9 +60,13 @@ impl Xoroshiro {
         n
     }
 
-    #[inline]
-    pub fn next_double(&mut self) -> f64 {
-        (self.next_long() >> (64 - 53)) as f64 * Self::DOUBLE_MUL
+    #[inline(always)]
+    fn next_i64(&mut self) -> i64 {
+        self.next_u64() as i64
+    }
+
+    #[inline(always)]
+    fn next_f64(&mut self) -> f64 {
+        (self.next_i64() >> (64 - 53)) as f64 * Self::DOUBLE_MUL
     }
 }
-

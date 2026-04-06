@@ -4,3 +4,8 @@ pub type Climate = [u64; 6];
 pub fn quantize(v: f64) -> u64 {
     (10000.0 * v) as i64 as u64
 }
+
+#[inline(always)]
+pub fn quantize_f32(v: f32) -> u64 {
+    (10000.0 * v) as i64 as u64
+}

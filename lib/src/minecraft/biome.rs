@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
 
-use crate::{JavaUtilRandom, minecraft::QuartPos, noise::BiomeNoise};
+use crate::{util::QuartPos, rng::{JavaUtilRandom, RandomSource}};
+//use crate::util::fixed_noise::BiomeNoise;
+use crate::noise::BiomeNoise;
+//use crate::util::noise_f32::BiomeNoise;
 
 pub struct Biomes {
-    pub is_overworld: HashSet<String>,
-    pub stronghold_biased: HashSet<String>,
+    //pub is_overworld: HashSet<String>,
+    //pub stronghold_biased: HashSet<String>,
     pub biome_noise: BiomeNoise,
 }
 
@@ -226,157 +228,158 @@ pub type BiomeID = i16;
 
     static STRONGHOLD_FILTER: OnceLock<BiomeFilter> = OnceLock::new();
 
-pub fn is_stronghold_biased(id: BiomeID) -> bool {
-    let filter = STRONGHOLD_FILTER.get_or_init(|| {
-        BiomeFilter::new(&[
-            PLAINS,
-            SUNFLOWER_PLAINS,
-            SNOWY_PLAINS,
-            ICE_SPIKES,
-            DESERT,
-            FOREST,
-            FLOWER_FOREST,
-            BIRCH_FOREST,
-            DARK_FOREST,
-            PALE_GARDEN,
-            OLD_GROWTH_BIRCH_FOREST,
-            OLD_GROWTH_PINE_TAIGA,
-            OLD_GROWTH_SPRUCE_TAIGA,
-            TAIGA,
-            SNOWY_TAIGA,
-            SAVANNA,
-            SAVANNA_PLATEAU,
-            WINDSWEPT_HILLS,
-            WINDSWEPT_GRAVELLY_HILLS,
-            WINDSWEPT_FOREST,
-            WINDSWEPT_SAVANNA,
-            JUNGLE,
-            SPARSE_JUNGLE,
-            BAMBOO_JUNGLE,
-            BADLANDS,
-            ERODED_BADLANDS,
-            WOODED_BADLANDS,
-            MEADOW,
-            CHERRY_GROVE,
-            GROVE,
-            SNOWY_SLOPES,
-            FROZEN_PEAKS,
-            JAGGED_PEAKS,
-            STONY_PEAKS,
-            MUSHROOM_FIELDS,
-            DRIPSTONE_CAVES,
-            LUSH_CAVES,
-        ])
-    });
-    filter.contains(id)
-}
+    pub fn is_stronghold_biased(id: BiomeID) -> bool {
+        let filter = STRONGHOLD_FILTER.get_or_init(|| {
+            BiomeFilter::new(&[
+                PLAINS,
+                SUNFLOWER_PLAINS,
+                SNOWY_PLAINS,
+                ICE_SPIKES,
+                DESERT,
+                FOREST,
+                FLOWER_FOREST,
+                BIRCH_FOREST,
+                DARK_FOREST,
+                PALE_GARDEN,
+                OLD_GROWTH_BIRCH_FOREST,
+                OLD_GROWTH_PINE_TAIGA,
+                OLD_GROWTH_SPRUCE_TAIGA,
+                TAIGA,
+                SNOWY_TAIGA,
+                SAVANNA,
+                SAVANNA_PLATEAU,
+                WINDSWEPT_HILLS,
+                WINDSWEPT_GRAVELLY_HILLS,
+                WINDSWEPT_FOREST,
+                WINDSWEPT_SAVANNA,
+                JUNGLE,
+                SPARSE_JUNGLE,
+                BAMBOO_JUNGLE,
+                BADLANDS,
+                ERODED_BADLANDS,
+                WOODED_BADLANDS,
+                MEADOW,
+                CHERRY_GROVE,
+                GROVE,
+                SNOWY_SLOPES,
+                FROZEN_PEAKS,
+                JAGGED_PEAKS,
+                STONY_PEAKS,
+                MUSHROOM_FIELDS,
+                DRIPSTONE_CAVES,
+                LUSH_CAVES,
+                ])
+        });
+        filter.contains(id)
+    }
 }
 
 
 impl Biomes {
-    pub fn new() -> Self {
-        let is_overworld = vec![
-            "minecraft:mushroom_fields",
-            "minecraft:deep_frozen_ocean",
-            "minecraft:frozen_ocean",
-            "minecraft:deep_cold_ocean",
-            "minecraft:cold_ocean",
-            "minecraft:deep_ocean",
-            "minecraft:ocean",
-            "minecraft:deep_lukewarm_ocean",
-            "minecraft:lukewarm_ocean",
-            "minecraft:warm_ocean",
-            "minecraft:stony_shore",
-            "minecraft:swamp",
-            "minecraft:mangrove_swamp",
-            "minecraft:snowy_slopes",
-            "minecraft:snowy_plains",
-            "minecraft:snowy_beach",
-            "minecraft:windswept_gravelly_hills",
-            "minecraft:grove",
-            "minecraft:windswept_hills",
-            "minecraft:snowy_taiga",
-            "minecraft:windswept_forest",
-            "minecraft:taiga",
-            "minecraft:plains",
-            "minecraft:meadow",
-            "minecraft:beach",
-            "minecraft:forest",
-            "minecraft:old_growth_spruce_taiga",
-            "minecraft:flower_forest",
-            "minecraft:birch_forest",
-            "minecraft:dark_forest",
-            "minecraft:pale_garden",
-            "minecraft:savanna_plateau",
-            "minecraft:savanna",
-            "minecraft:jungle",
-            "minecraft:badlands",
-            "minecraft:desert",
-            "minecraft:wooded_badlands",
-            "minecraft:jagged_peaks",
-            "minecraft:stony_peaks",
-            "minecraft:frozen_river",
-            "minecraft:river",
-            "minecraft:ice_spikes",
-            "minecraft:old_growth_pine_taiga",
-            "minecraft:sunflower_plains",
-            "minecraft:old_growth_birch_forest",
-            "minecraft:sparse_jungle",
-            "minecraft:bamboo_jungle",
-            "minecraft:eroded_badlands",
-            "minecraft:windswept_savanna",
-            "minecraft:cherry_grove",
-            "minecraft:frozen_peaks",
-            "minecraft:dripstone_caves",
-            "minecraft:lush_caves",
-            "minecraft:deep_dark"
-                ].into_iter().map(|x| x.to_string()).collect();
-        let stronghold_biased = vec![
-            "minecraft:plains",
-            "minecraft:sunflower_plains",
-            "minecraft:snowy_plains",
-            "minecraft:ice_spikes",
-            "minecraft:desert",
-            "minecraft:forest",
-            "minecraft:flower_forest",
-            "minecraft:birch_forest",
-            "minecraft:dark_forest",
-            "minecraft:pale_garden",
-            "minecraft:old_growth_birch_forest",
-            "minecraft:old_growth_pine_taiga",
-            "minecraft:old_growth_spruce_taiga",
-            "minecraft:taiga",
-            "minecraft:snowy_taiga",
-            "minecraft:savanna",
-            "minecraft:savanna_plateau",
-            "minecraft:windswept_hills",
-            "minecraft:windswept_gravelly_hills",
-            "minecraft:windswept_forest",
-            "minecraft:windswept_savanna",
-            "minecraft:jungle",
-            "minecraft:sparse_jungle",
-            "minecraft:bamboo_jungle",
-            "minecraft:badlands",
-            "minecraft:eroded_badlands",
-            "minecraft:wooded_badlands",
-            "minecraft:meadow",
-            "minecraft:cherry_grove",
-            "minecraft:grove",
-            "minecraft:snowy_slopes",
-            "minecraft:frozen_peaks",
-            "minecraft:jagged_peaks",
-            "minecraft:stony_peaks",
-            "minecraft:mushroom_fields",
-            "minecraft:dripstone_caves",
-            "minecraft:lush_caves"
-                ].into_iter().map(|x| x.to_string()).collect();
-        let mut biome_noise = BiomeNoise::default();
-        biome_noise.set_seed(1, false);
-        Self {
-            is_overworld,
-            stronghold_biased,
-            biome_noise,
-        }
+    pub fn new(seed: i64) -> Self {
+        /*let is_overworld = vec![
+          "minecraft:mushroom_fields",
+          "minecraft:deep_frozen_ocean",
+          "minecraft:frozen_ocean",
+          "minecraft:deep_cold_ocean",
+          "minecraft:cold_ocean",
+          "minecraft:deep_ocean",
+          "minecraft:ocean",
+          "minecraft:deep_lukewarm_ocean",
+          "minecraft:lukewarm_ocean",
+          "minecraft:warm_ocean",
+          "minecraft:stony_shore",
+          "minecraft:swamp",
+          "minecraft:mangrove_swamp",
+          "minecraft:snowy_slopes",
+          "minecraft:snowy_plains",
+          "minecraft:snowy_beach",
+          "minecraft:windswept_gravelly_hills",
+          "minecraft:grove",
+          "minecraft:windswept_hills",
+          "minecraft:snowy_taiga",
+          "minecraft:windswept_forest",
+          "minecraft:taiga",
+          "minecraft:plains",
+          "minecraft:meadow",
+          "minecraft:beach",
+          "minecraft:forest",
+          "minecraft:old_growth_spruce_taiga",
+          "minecraft:flower_forest",
+          "minecraft:birch_forest",
+          "minecraft:dark_forest",
+          "minecraft:pale_garden",
+          "minecraft:savanna_plateau",
+          "minecraft:savanna",
+          "minecraft:jungle",
+          "minecraft:badlands",
+          "minecraft:desert",
+          "minecraft:wooded_badlands",
+          "minecraft:jagged_peaks",
+          "minecraft:stony_peaks",
+          "minecraft:frozen_river",
+          "minecraft:river",
+          "minecraft:ice_spikes",
+          "minecraft:old_growth_pine_taiga",
+          "minecraft:sunflower_plains",
+          "minecraft:old_growth_birch_forest",
+          "minecraft:sparse_jungle",
+          "minecraft:bamboo_jungle",
+          "minecraft:eroded_badlands",
+          "minecraft:windswept_savanna",
+          "minecraft:cherry_grove",
+          "minecraft:frozen_peaks",
+          "minecraft:dripstone_caves",
+          "minecraft:lush_caves",
+          "minecraft:deep_dark"
+          ].into_iter().map(|x| x.to_string()).collect();
+          let stronghold_biased = vec![
+          "minecraft:plains",
+          "minecraft:sunflower_plains",
+          "minecraft:snowy_plains",
+          "minecraft:ice_spikes",
+          "minecraft:desert",
+          "minecraft:forest",
+          "minecraft:flower_forest",
+          "minecraft:birch_forest",
+          "minecraft:dark_forest",
+          "minecraft:pale_garden",
+          "minecraft:old_growth_birch_forest",
+          "minecraft:old_growth_pine_taiga",
+          "minecraft:old_growth_spruce_taiga",
+          "minecraft:taiga",
+          "minecraft:snowy_taiga",
+          "minecraft:savanna",
+          "minecraft:savanna_plateau",
+          "minecraft:windswept_hills",
+          "minecraft:windswept_gravelly_hills",
+          "minecraft:windswept_forest",
+          "minecraft:windswept_savanna",
+          "minecraft:jungle",
+          "minecraft:sparse_jungle",
+          "minecraft:bamboo_jungle",
+          "minecraft:badlands",
+          "minecraft:eroded_badlands",
+          "minecraft:wooded_badlands",
+          "minecraft:meadow",
+          "minecraft:cherry_grove",
+          "minecraft:grove",
+          "minecraft:snowy_slopes",
+          "minecraft:frozen_peaks",
+          "minecraft:jagged_peaks",
+          "minecraft:stony_peaks",
+          "minecraft:mushroom_fields",
+          "minecraft:dripstone_caves",
+          "minecraft:lush_caves"
+              ].into_iter().map(|x| x.to_string()).collect();
+          */
+          let mut biome_noise = BiomeNoise::default();
+          biome_noise.set_seed(seed, false);
+          Self {
+              //is_overworld,
+              //stronghold_biased,
+              biome_noise,
+          }
     }
 }
 
@@ -396,7 +399,7 @@ impl Biomes {
                 let biome_id = self.get_noise_biome(x_d, y, z_d, &mut dat);
 
                 if biomes::is_stronghold_biased(biome_id as i16) {
-                    if count == 0 || random_source.next_int_bound(count + 1) == 0  {
+                    if count == 0 || random_source.next_i32_bound(count + 1) == 0  {
                         let block_pos = (QuartPos::to_block(x_d), y, QuartPos::to_block(z_d));
                         res = Some(block_pos);
                     }
@@ -434,7 +437,7 @@ impl Biomes {
                     let biome_id = self.get_noise_biome(w, q, x, &mut dat);
                     if biomes::is_stronghold_biased(biome_id as i16) {
                         //println!("{u}:{v}:{biome_id}:{}",random_source.seed);
-                        if r == 0 || random_source.next_int_bound(r + 1) == 0  {
+                        if r == 0 || random_source.next_i32_bound(r + 1) == 0  {
                             let block_pos = (QuartPos::to_block(w), j, QuartPos::to_block(x));
                             if bl {
                                 return Some(block_pos)

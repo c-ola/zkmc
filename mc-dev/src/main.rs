@@ -1,6 +1,6 @@
-use mc_lib::{generate_strongholds};
+use mc_lib::{generate_strongholds_test};
 
 pub fn main() {
-    generate_strongholds();
+    generate_strongholds_test();
 }
 
