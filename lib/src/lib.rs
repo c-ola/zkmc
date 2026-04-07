@@ -9,18 +9,23 @@ use crate::minecraft::chunk::{ChunkGeneratorStructureState, ChunkPos, Concentric
 pub fn generate_strongholds_test() {
     // preferred_biomes is something else ill figure it out later
     let placement = ConcentricRingPlacement::new(32, 128, 3);
-    let seed = -6152149964729591252;
-    //let seed = 1;
+    //let seed = -6152149964729591252;
+    let seed = 1;
     let chunk_generator_structure_state = ChunkGeneratorStructureState::new(seed); 
     let positions = chunk_generator_structure_state.generate_ring_positions(placement);
     for (i, position) in positions.iter().enumerate() {
-        println!("{i}: {}, {}:{}, {}", ((position.x * 16)) + 4, (((position.y * 16)) + 4), position.x, position.y);
+        //println!("{i}: {}, {}:{}, {}", ((position.x * 16)) + 4, (((position.y * 16)) + 4), position.x, position.y);
     }
+    println!("[");
+    for (i, position) in positions.iter().enumerate() {
+        println!("{}, {}", ((position.x * 16)) + 4, (((position.y * 16)) + 4));
+    }
+    println!("]");
 }
 
-pub fn generate_strongholds(seed: u64) -> Vec<ChunkPos> {
-    let placement = ConcentricRingPlacement::new(32, 1, 3);
-    let chunk_generator_structure_state = ChunkGeneratorStructureState::new(seed as i64); 
+pub fn generate_strongholds(seed: i64) -> Vec<ChunkPos> {
+    let placement = ConcentricRingPlacement::stronghold_default();
+    let chunk_generator_structure_state = ChunkGeneratorStructureState::new(seed); 
     let positions = chunk_generator_structure_state.generate_ring_positions(placement);
     positions
 }

@@ -38,6 +38,14 @@ enum Commands {
         #[arg(short, long, help = "Block Z Position")]
         z: i32,
     },
+    Average {
+        #[arg(short, long, help = "Minecraft World Seed")]
+        seed: i64,
+    },
+}
+
+pub fn execute_all_seeds() {
+    
 }
 
 #[tokio::main]
@@ -47,8 +55,27 @@ async fn main() -> Result<(), Box<dyn Error>>{
     let client = ProverClient::from_env().await;
     let guest_elf = Elf::Static(GUEST_ELF);
 
-
     match args.command {
+        Commands::Average { seed } => {
+
+            let locations = mc_lib::generate_strongholds(seed);
+            let mut cycle_counts = Vec::new();
+            for loc in &locations {
+                let x = (loc.x * 16) + 4;
+                let z = (loc.y * 16) + 4;
+                let mut stdin = SP1Stdin::new();
+                stdin.write(&seed);
+                stdin.write(&x);
+                stdin.write(&z);
+                let (mut _public_values, report) = client.execute(guest_elf.clone(), stdin).await?;
+                //println!("Total Count = {}", report.total_instruction_count());
+                cycle_counts.push(report.total_instruction_count())
+            }
+            println!("{cycle_counts:?}");
+            let len = cycle_counts.len();
+            let sum: u64 = cycle_counts.iter().sum();
+            println!("avg={}", sum as f64 / len as f64);
+        }
         Commands::Execute { seed, x, z } => {
             let mut stdin = SP1Stdin::new();
             stdin.write(&seed);
@@ -56,7 +83,6 @@ async fn main() -> Result<(), Box<dyn Error>>{
             stdin.write(&z);
             let (mut _public_values, report) = client.execute(guest_elf, stdin).await?;
             println!("Total Count = {}", report.total_instruction_count())
-
         }
         Commands::Prove { seed, x, z, output } => {
             let mut stdin = SP1Stdin::new();
@@ -79,7 +105,9 @@ async fn main() -> Result<(), Box<dyn Error>>{
             let mut proof = SP1ProofWithPublicValues::load(&input).expect("Failed to load proof");
 
             println!("Verifying proof from {:?}...", input);
+            let start = Instant::now();
             client.verify(&proof, &pk.verifying_key(), None).expect("Verification Failed");
+            println!("Verified in {}s", start.elapsed().as_secs_f32());
 
             let proven_seed = proof.public_values.read::<i64>();
 

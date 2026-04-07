@@ -25,7 +25,7 @@ pub fn main() {
         }
         true
     });
-    // expensive ahh
+    // expensive
     /*generator.search_stronghold_positions_with(placement, (chunk_x, chunk_z), (7, 7), |pos| {
         if chunk_x == pos.x && chunk_z == pos.y {
             println!("Found chunk {}, {}", pos.x, pos.y);
